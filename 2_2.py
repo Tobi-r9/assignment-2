@@ -39,13 +39,13 @@ def calculate_likelihood(tree_topology, theta, beta):
     This is a suggested template. You don't have to use it.
     """
     print("Calculating the likelihood...")
+    #get the root
+    root = np.argwhere(np.isnan(tree_topology))[0][0]
     n = beta.shape[0]
-    k,_ = np.shape(theta)
+    k = len(theta[root])
     print('n = {}, k = {}'.format(n,k))
     #S table filled with -1, to make sure empty entries do differ from probabilitiesd
     S = np.full(shape=(n,k),fill_value=-1.0)
-    #get the root
-    root = np.argwhere(np.isnan(tree_topology))[0][0]
     prob = [p for p in theta[root]]
     # TODO Add your code here
     l_array = np.array([s(root,i,beta,theta,tree_topology,S)*p for i,p in enumerate(prob)])
@@ -57,9 +57,10 @@ def calculate_likelihood(tree_topology, theta, beta):
     return likelihood
 
 def s(x,i,beta,theta,tree_topology,S):
-    # check if we at a leave and if i is the value assigned to this leave
+    # check if the s(x,i) is already computed 
     if S[x,i] != -1.0:
         return S[x,i]
+    # check if we at a leave and if i is the value assigned to this leave
     if not np.isnan(beta[x]):
         if i == beta[x]:
             S[x,i] = 1
@@ -70,8 +71,8 @@ def s(x,i,beta,theta,tree_topology,S):
     else:
         # get children
         c1,c2 =  np.where(tree_topology == x)[0]
-        c1,c2 = int(c1),int(c2) #to make sure no pronlems arise 
-        #compute sum_j s(c,j)*p(c=j|x=i) for both children
+        c1,c2 = int(c1),int(c2) #to make sure no problems arise 
+        #compute sum_j s(c,j)*p(c=j|x=i) for both children c in (c1,c2)
         s1 = np.array([s(c1, j,beta,theta,tree_topology,S)*pij for j, pij in enumerate(theta[c1][i])])
         s2 = np.array([s(c2, j,beta,theta,tree_topology,S)*pij for j, pij in enumerate(theta[c2][i])])
         S[x,i] = np.sum(s1)*np.sum(s2)
@@ -86,8 +87,8 @@ def main():
     print("\n1. Load tree data from file and print it\n")
 
     #filename = "data/q2_2/q2_2_small_tree.pkl"
-    filename = "data/q2_2/q2_2_medium_tree.pkl"
-    #filename = "data/q2_2/q2_2_large_tree.pkl"
+    #filename = "data/q2_2/q2_2_medium_tree.pkl"
+    filename = "data/q2_2/q2_2_large_tree.pkl"
     t = Tree()
     t.load_tree(filename)
     t.print()
