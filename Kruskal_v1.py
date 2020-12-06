@@ -121,6 +121,8 @@ class Graph:
         print("Following are the edges in the constructed MST")
         for u, v, weight in result:
             print("%d -- %d == %d" % (u, v, weight))
+        
+        return result
 
 
 def main():
