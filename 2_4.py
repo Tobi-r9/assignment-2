@@ -40,7 +40,9 @@
     """
 import numpy as np
 import matplotlib.pyplot as plt
+from em import EM
 
+# TODO change your calculation of r and pi to make sure that pi sums to one 
 
 def save_results(loglikelihood, topology_array, theta_array, filename):
     """ This function saves the log-likelihood vs iteration values,
@@ -73,37 +75,38 @@ def em_algorithm(seed_val, samples, num_clusters, max_num_iter=100):
 
     # Set the seed
     np.random.seed(seed_val)
-
+    num_samples, num_nodes = samples.shape
     # TODO: Implement EM algorithm here.
+    exp = EM(num_nodes,num_clusters,samples, seed_val)
+    exp.px = exp.prior() 
+    print("Running EM algorithm...")
+    ## step 1.
+    for i in range(200):
+        exp.likelihood = exp.update_likelihood()
+        exp.r = exp.update_r()
+
+        ## step 2
+        exp.pi = exp.update_pi()
+
+        ## step 3
+        exp.q1, exp.q2 = exp.update_q()
+        exp.I = exp.update_I()
+        exp.G = exp.update_graph()
+        ## step 4
+        exp.MST = exp.compute_MST()
+        print('pi = {}, likelihood = {}, px = {}'.format(exp.pi[1],type(exp.likelihood),type(exp.px)))
+        ## step 5
+        exp.topology_list = exp.update_topology()
+        exp.theta_list = exp.update_theta()
+        exp.loglikelihood.append(exp.compute_loglikelihood())
 
     # Start: Example Code Segment. Delete this segment completely before you implement the algorithm.
-    print("Running EM algorithm...")
-
-    loglikelihood = []
-
-    for iter_ in range(max_num_iter):
-        loglikelihood.append(np.log((1 + iter_) / max_num_iter))
-
-    from Tree import TreeMixture
-    tm = TreeMixture(num_clusters=num_clusters, num_nodes=samples.shape[1])
-    tm.simulate_pi(seed_val=seed_val)
-    tm.simulate_trees(seed_val=seed_val)
-    tm.sample_mixtures(num_samples=samples.shape[0], seed_val=seed_val)
-
-    topology_list = []
-    theta_list = []
-    for i in range(num_clusters):
-        topology_list.append(tm.clusters[i].get_topology_array())
-        theta_list.append(tm.clusters[i].get_theta_array())
-
-    loglikelihood = np.array(loglikelihood)
-    topology_list = np.array(topology_list)
-    theta_list = np.array(theta_list)
-    # End: Example Code Segment
-
-    ###
-
-    return loglikelihood, topology_list, theta_list
+    
+    theta_list = exp.theta_list
+    topology_list = exp.topology_list
+    loglikelihood = exp.loglikelihood
+    #
+    return loglikelihood[1:], topology_list, theta_list
 
 
 def main():

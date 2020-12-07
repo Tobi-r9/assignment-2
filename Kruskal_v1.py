@@ -120,7 +120,7 @@ class Graph:
         # print the contents of result[] to display the built MST
         print("Following are the edges in the constructed MST")
         for u, v, weight in result:
-            print("%d -- %d == %d" % (u, v, weight))
+            print("%d -- %d == %f" % (u, v, weight))
         
         return result
 

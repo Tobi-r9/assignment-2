@@ -2,29 +2,29 @@ import numpy as np
 from Tree import TreeMixture
 from Kruskal_v1 import Graph
 
-class ExpectationMaximation:
+class EM:
 
     # not necessary, since this code is not scalable anymore 
     DIMENSION = 2
     '''To do: check that all variables are initialized with 0 
     and I do not a step of computation just by initializing'''
 
-    def __init__(self,num_nodes,num_clusters,samples, seed_val, dim):
+    def __init__(self,num_nodes,num_clusters,samples, seed_val):
         self.N = len(samples)
         self.num_nodes = num_nodes
         self.num_clusters = num_clusters
         self.samples = samples
-        self.r = np.zeros((self.N,self.num_clusters))
-        self.pi = create_pi(self.num_clusters, seed_val)
-        self.topology_list, self.theta_list = init_tree(self.num_clusters, self.samples, seed_val)
-        self.px = prior()
-        self.posterior = update_posterior()
-        self.r = update_r()
-        self.q2 = np.zeros((self.num_clusters,self.num_nodes, self.num_nodes))
-        self.q1 = np.zeros((self.num_clusters, self.num_nodes, DIMENSION))
+        self.r = np.zeros((self.num_clusters,self.N))
+        self.pi = self.init_pi(self.num_clusters, seed_val)
+        self.topology_list, self.theta_list = self.init_tree(self.num_clusters, self.samples, seed_val)
+        self.px = np.zeros(self.N)
+        self.likelihood = np.zeros((self.num_clusters,self.N))
+        self.q2 = np.zeros((self.num_clusters,self.num_nodes, self.num_nodes,EM.DIMENSION, EM.DIMENSION))
+        self.q1 = np.zeros((self.num_clusters, self.num_nodes, EM.DIMENSION))
         self.I = np.zeros((self.num_clusters,self.num_nodes,self.num_nodes))
         self.G = np.zeros(self.num_clusters)
         self.MST = np.zeros(self.num_clusters)
+        self.loglikelihood = []
 
     def init_tree(self,num_clusters, samples, seed_val):
         '''initialize a tree as done in 2_4'''
@@ -43,7 +43,7 @@ class ExpectationMaximation:
         theta_list = np.array(theta_list)
         return topology_list, theta_list
 
-    def create_pi(self,num_clusters,seed_val=None):
+    def init_pi(self,num_clusters,seed_val):
         '''initialize pi'''
 
         if seed_val is not None:
@@ -54,47 +54,59 @@ class ExpectationMaximation:
         return pi
 
     def prior(self):
-        '''compute the prior p(x) by number x_i appears / number of samples'''
+        '''compute the prior p(x) by number x_i appears / number of samples
+            return: p, np.array, shape = (N,)'''
+        
 
         p = np.zeros(self.N)
-        for ixd,sample in enumerate(self.samples):
-            c = self.samples.count(sample)
+        temp = [list(sample) for sample in self.samples]
+        for ixd,sample in enumerate(temp):
+            c = temp.count(sample)
             p[ixd] = c/self.N
         return p
 
-    def update_posterior(self):
-        '''update the posterior p(x|T_k, theta_k) using the actual version of T and theta and p(x)'''
+    def update_likelihood(self):
+        '''update the likelihood p(x|T_k, theta_k) using the actual version of T and theta and p(x)
+            return p, np.array, shape=(k,N)'''
 
         p = np.ones((self.num_clusters,self.N))
         for k in range(self.num_clusters):
             for idx, sample in enumerate(self.samples):
                 for node,value in enumerate(sample):
                     parent = self.topology_list[k][node]
+                    
                     # if node = root 
                     if np.isnan(parent):
                         p[k,idx] *= self.theta_list[k][node][value]
-                    # else
-                    parent_value = sample[parent]
-                    p[k,idx] *= self.theta_list[k][node][parent_value][value]
+                    else:
+                        parent = int(parent)
+                        parent_value = sample[parent]
+                        p[k,idx] *= self.theta_list[k][node][parent_value][value]
         return p 
 
 
 
     def update_r(self):
-        '''update r according to the paper'''
+        '''update r according to the paper
+            return r, np.array, shape = (k,N)'''
 
-        r = np.zeros((self.num_clustersn,self.N))
+        r = np.zeros((self.num_clusters,self.N))
         for k in range(self.num_clusters):
-            r[:,k] = self.posterior[k,:] * self.pi[k]/self.px
+            r[k,:] = (self.likelihood[k,:] * self.pi[k])/self.px
+        #normalize r
+        for n in range(self.N):
+            r[:,n] = r[:,n]/sum(r[:,n])
         
         return r
 
     def update_pi(self):
-        '''update pi according to the paper'''
-
+        '''update pi according to the paper
+            returns: pi, np.array, shape=(k,)'''
+        pi = np.zeros(self.num_clusters)
         for k in range(self.num_clusters):
-            self.pi[k] = np.sum(self.r[:,k])/self.N
-            
+            pi[k] = np.sum(self.r[k,:])/self.N
+        pi = pi/sum(pi)
+        return pi
     
     def update_q(self):
         '''this function does update both q matrices (q(xa) and q(xa,xb)) according to the paper
@@ -102,25 +114,25 @@ class ExpectationMaximation:
         in the third. DIMENSION,DIMENSION as extra dimension for q2 represent the possible value combinations
         and they were used instead of just on to make the implementation for I easier'''
 
-        q2 = np.zeros((self.num_clusters, self.num_nodes, self.num_nodes, DIMENSION, DIMENSION))
-        q1 = np.zeros((self.num_clusters, self.num_nodes, DIMENSION))
+        q2 = np.zeros((self.num_clusters, self.num_nodes, self.num_nodes, EM.DIMENSION, EM.DIMENSION))
+        q1 = np.zeros((self.num_clusters, self.num_nodes, EM.DIMENSION))
         for k in range(self.num_clusters):
-            denominator = np.sum(self.r[:,k])
-            for xi in len(self.num_nodes):
-                n1 = sum([r[n,k] for n in range(self.N) if samples[n][xi] == 0])
-                n2 = sum([r[n,k] for n in range(self.N) if samples[n][xi] == 1])
+            denominator = np.sum(self.r[k,:])
+            for xi in range(self.num_nodes):
+                n1 = sum([self.r[k,n] for n in range(self.N) if self.samples[n][xi] == 0])
+                n2 = sum([self.r[k,n] for n in range(self.N) if self.samples[n][xi] == 1])
                 q1[k,xi,0] = n1/(n1+n2)
                 q1[k,xi,1] = n2/(n1+n2)
 
-                for xj in len(self.num_nodes):
-                    aa = [r[n,k] for n in range(self.N) if (samples[n][xi] == 0 and samples[n][xj] == 0)]
-                    ab = [r[n,k] for n in range(self.N) if (samples[n][xi] == 0 and samples[n][xj] == 1)]
-                    bb = [r[n,k] for n in range(self.N) if (samples[n][xi] == 1 and samples[n][xj] == 1)]
-                    ba = [r[n,k] for n in range(self.N) if (samples[n][xi] == 1 and samples[n][xj] == 0)]
-                    q[k,xi,xj,0,0] = np.sum(aa)/denominator
-                    q[k,xi,xj,0,1] = np.sum(ab)/denominator
-                    q[k,xi,xj,1,1] = np.sum(bb)/denominator
-                    q[k,xi,xj,1,0] = np.sum(ba)/denominator
+                for xj in range(self.num_nodes):
+                    aa = [self.r[k,n] for n in range(self.N) if (self.samples[n][xi] == 0 and self.samples[n][xj] == 0)]
+                    ab = [self.r[k,n] for n in range(self.N) if (self.samples[n][xi] == 0 and self.samples[n][xj] == 1)]
+                    bb = [self.r[k,n] for n in range(self.N) if (self.samples[n][xi] == 1 and self.samples[n][xj] == 1)]
+                    ba = [self.r[k,n] for n in range(self.N) if (self.samples[n][xi] == 1 and self.samples[n][xj] == 0)]
+                    q2[k,xi,xj,0,0] = np.sum(aa)/denominator
+                    q2[k,xi,xj,0,1] = np.sum(ab)/denominator
+                    q2[k,xi,xj,1,1] = np.sum(bb)/denominator
+                    q2[k,xi,xj,1,0] = np.sum(ba)/denominator
         
         return q1, q2
 
@@ -133,10 +145,10 @@ class ExpectationMaximation:
             for x1 in range(self.num_nodes):
                 for x2 in range(self.num_nodes):
                     #go through ab (x1 = a, x2 = b)
-                    for a in range(DIMENSION):
-                        for b in range(DIMENSION):
-                            if q2[k,x1,x2,a,b] != 0:
-                                I[k,x1,x2] += q2[k,x1,x2,a,b]*np.log(q2[k,x1,x2,a,b]/(q1[k,x1,a]*q1[k,x2,b]))
+                    for a in range(EM.DIMENSION):
+                        for b in range(EM.DIMENSION):
+                            if self.q2[k,x1,x2,a,b] != 0:
+                                I[k,x1,x2] += self.q2[k,x1,x2,a,b]*np.log(self.q2[k,x1,x2,a,b]/(self.q1[k,x1,a]*self.q1[k,x2,b]))
                             else:
                                 I[k,x1,x2] += 0
 
@@ -147,52 +159,89 @@ class ExpectationMaximation:
         '''This function does create k fully connected Graphs whith the edges from I
         Note that we connect two nodes twice (e.g we have a edges (n1, n2) and (n2, n1))'''
 
-        G = np.array([k for k in range(self.num_clusters)])
+        G = []
         for k in range(self.num_clusters):
             g = Graph(self.num_nodes)
             for node1 in range(self.num_nodes):
-                for node2 in range(len(self.num_nodes)):
+                for node2 in range(self.num_nodes):
                     w = self.I[k,node1,node2]
-                    g.add(node1,node2)
-            
-            G[k] = g
+                    g.addEdge(node1,node2,w)
+            G.append(g) 
 
         return G
 
     def compute_MST(self):
         '''compute the k maximum spanning trees
-        return: array shape (k,)'''
+        return: mst, array, shape=(k,)'''
 
-        mst = np.zeros(self.num_clusters)
+        mst = []
         for k in range(self.num_clusters):
-            mst[k] = self.G[k].maximum_spanning_tree()
+            mst.append(self.G[k].maximum_spanning_tree())
 
         return mst
 
     def update_topology(self):
-        temp_mst = self.MST.copy()
-        root = [[] for k in range(self.num_clusters)]
-        #get root 0
+        '''creates a topology from the maximum spanning tree 
+        return: topology, list,  shape=(num_clusters, num_nodes)''' 
+
+        topology = [[i for i in range(self.num_nodes)] for k in range(self.num_clusters)]
         for k in range(self.num_clusters):
-            for edge in self.MST[k]:
-                if 0 in edge:
-                    root.append(edge)
-                    temp_mst[k].remove(edge)
-        
+            temp_tree = self.MST[k]
+            #get root and children
+            topology[k][0] = np.nan
+            parents = [node for node in self.MST[k] if (node[0]==0 or node[1] == 0)]
+            parent = []
+            for node in  parents:
+                temp_tree.remove(node)
+                node.remove(0)
+                topology[k][node[0]] = 0
+                parent.append(node[0])
+
+            #find parent node pair for all other nodes
+            while temp_tree != []:
+                parents = {}
+                temp_parent = []
+                #get children of parents
+                for p in parent:
+                    parents[p] = [node for node in temp_tree if (node[0]==p or node[1] == p)]
+                
+                # for every child in parents update the topology
+                for p in parents.keys():
+                    for node in parents[p]:
+                        temp_tree.remove(node) #remove the parent so the firs entry has to be the child 
+                        node.remove(p)
+                        topology[k][node[0]] = p
+                        temp_parent.append(node[0])
+                parent = temp_parent
+        return topology
+                    
 
     def update_theta(self):
+        '''updates self.theta directly''' 
 
-        temp = self.theta_list
+        theta = self.theta_list.copy()
         
         for k in range(self.num_clusters):
-            for node, entry in enumerate(temp[k,:,:]):
+            for node, entry in enumerate(self.theta_list[k,:,:]):
                 parent = self.topology_list[k][node]
                 #root
                 if np.isnan(parent):
-                    self.theta_list[k][node] = self.q1[k][node]
+                    theta[k][node] = self.q1[k][node]
                 else:
                     for a in range(2):
                         for b in range(2):
-                            self.list_theta[k][node][b][a] = self.q2[k][node][parent][a][b]/self.q1[k][parent][b]
+                            theta[k][node][b][a] = self.q2[k][node][parent][a][b]/self.q1[k][parent][b]
+        return theta
                 
+
+    def compute_loglikelihood(self):
+        '''compute the loglikelihood given the data,the current estimate of the likelihoop
+         and the curen parameters
+         returns: sum(loglikelihood), float'''
+        loglikelihood = []
+        for n in range(self.N):
+            temp = np.log(np.sum(self.pi*self.likelihood[:,n]))
+            loglikelihood.append(temp)
+    
+        return sum(loglikelihood)
 
