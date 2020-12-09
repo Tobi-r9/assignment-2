@@ -81,7 +81,7 @@ class Graph:
         """ This function is the modified version of KruskalMST function.
             Given a graph with weighted edges, this function returns the maximum spanning tree. """
 
-        print("Running maximum spanning tree algorithm...")
+        #print("Running maximum spanning tree algorithm...")
 
         result = []  # This will store the resultant MST
 
@@ -118,9 +118,9 @@ class Graph:
             # Else discard the edge
 
         # print the contents of result[] to display the built MST
-        print("Following are the edges in the constructed MST")
-        for u, v, weight in result:
-            print("%d -- %d == %f" % (u, v, weight))
+        # print("Following are the edges in the constructed MST")
+        # for u, v, weight in result:
+        #     print("%d -- %d == %f" % (u, v, weight))
         
         return result
 

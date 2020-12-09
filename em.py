@@ -15,8 +15,7 @@ class EM:
         self.num_clusters = num_clusters
         self.samples = samples
         self.r = np.zeros((self.num_clusters,self.N))
-        self.pi = self.init_pi(self.num_clusters, seed_val)
-        self.topology_list, self.theta_list = self.init_tree(self.num_clusters, self.samples, seed_val)
+        self.topology_list, self.theta_list, self.pi = self.init_tree(self.num_clusters, self.samples, seed_val)
         self.px = np.zeros(self.N)
         self.likelihood = np.zeros((self.num_clusters,self.N))
         self.q2 = np.zeros((self.num_clusters,self.num_nodes, self.num_nodes,EM.DIMENSION, EM.DIMENSION))
@@ -26,6 +25,7 @@ class EM:
         self.MST = np.zeros(self.num_clusters)
         self.loglikelihood = []
 
+
     def init_tree(self,num_clusters, samples, seed_val):
         '''initialize a tree as done in 2_4'''
 
@@ -33,6 +33,7 @@ class EM:
         tm.simulate_pi(seed_val=seed_val)
         tm.simulate_trees(seed_val=seed_val)
         tm.sample_mixtures(num_samples=samples.shape[0], seed_val=seed_val)
+        pi = tm.pi
         topology_list = []
         theta_list = []
         for i in range(num_clusters):
@@ -41,17 +42,8 @@ class EM:
 
         topology_list = np.array(topology_list)
         theta_list = np.array(theta_list)
-        return topology_list, theta_list
+        return topology_list, theta_list, pi
 
-    def init_pi(self,num_clusters,seed_val):
-        '''initialize pi'''
-
-        if seed_val is not None:
-            np.random.seed(seed_val)
-
-        pi = np.random.rand(num_clusters)
-        pi = pi / np.sum(pi)
-        return pi
 
     def prior(self):
         '''compute the prior p(x) by number x_i appears / number of samples
@@ -177,7 +169,7 @@ class EM:
         mst = []
         for k in range(self.num_clusters):
             mst.append(self.G[k].maximum_spanning_tree())
-
+            
         return mst
 
     def update_topology(self):
