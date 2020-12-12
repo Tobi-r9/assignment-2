@@ -1,1 +1,2 @@
-samples
+
+    print(p.shape)

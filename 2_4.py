@@ -65,6 +65,7 @@ def save_results(loglikelihood, topology_array, theta_array, filename):
 
 def step(exp):
     exp.likelihood = exp.update_likelihood()
+    exp.px = exp.prior() 
     exp.r = exp.update_r()
 
     ## step 2
@@ -82,7 +83,7 @@ def step(exp):
     exp.loglikelihood.append(exp.compute_loglikelihood())
 
 def sieving(num_clusters, samples):
-    seeds = random.sample(range(1, 500), 100)
+    seeds = [123]#random.sample(range(1, 500), 100)
     models = []
     num_samples, num_nodes = samples.shape
     print('\nrun the first 10 timesteps for 100 sedds ...\n')
@@ -94,8 +95,8 @@ def sieving(num_clusters, samples):
         models.append((exp,seed,logl))
     # take the 10 best values
     models.sort(key=lambda x: x[2], reverse=True)
-    best_models = models[:10]
-    #best_models = models
+    #best_models = models[:10]
+    best_models = models
     print('the best 10 are chosen ... \n')
     print('Run the best 10 models until  convergence ...')
     for i, model in enumerate(best_models):
@@ -104,7 +105,7 @@ def sieving(num_clusters, samples):
         exp = EM(num_nodes,num_clusters,samples, seed)
         init = {'pi':exp.pi, 'theta':exp.theta_list, 'topology':exp.topology_list}
         logl, topology, theta = em_algorithm(seed, samples, num_clusters, 0, exp)
-        best_models[i] = (logl, topology, theta, seed, init)
+        best_models[i] = (logl, topology, theta, seed, init, exp)
     best_models.sort(key=lambda x: x[0], reverse=True)
     result = best_models[0]
     return result
@@ -125,16 +126,18 @@ def em_algorithm(seed_val, samples, num_clusters, max_num_iter, exp):
 
     This is a suggested template. Feel free to code however you want.
     """
-    epsilon = 10e-4 
+    epsilon = 10e-5 
     # Set the seed
     # TODO: Implement EM algorithm here.
     #save initialization
     
-    exp.px = exp.prior() 
+    
     if max_num_iter == 0:
         #run until convergence
         diff = 10
-        while diff > epsilon:
+        count = 0
+        while diff > epsilon and count <= 150:
+            count = count+1
             step(exp)
             if len(exp.loglikelihood) >= 2:
                 diff = abs(exp.loglikelihood[-1]-exp.loglikelihood[-2])
@@ -147,9 +150,55 @@ def em_algorithm(seed_val, samples, num_clusters, max_num_iter, exp):
     theta_list = exp.theta_list
     topology_list = exp.topology_list
     loglikelihood = exp.loglikelihood
-    #
+    
     return loglikelihood[1:], topology_list, theta_list
 
+def get_likelihood(samples, theta_list, topology_list):
+    '''update the likelihood p(x|T_k, theta_k) using the actual version of T and theta and p(x)
+        return p, np.array, shape=(k,N)'''
+    num_clusters = len(theta_list)
+    N, num_nodes = samples.shape
+    p = np.ones((num_clusters,N))
+    for k in range(num_clusters):
+        for idx, sample in enumerate(samples):
+            for node,value in enumerate(sample):
+                parent = topology_list[k][node]
+                
+                # if node = root 
+                if np.isnan(parent):
+                    p[k,idx] *= theta_list[k][node][value]
+                else:
+                    parent = int(parent)
+                    parent_value = sample[parent]
+                    p[k,idx] *= theta_list[k][node][parent_value][value]
+    return p 
+
+def load_true_values():
+    '''load the topology, theta and pi from given data'''
+    fle = './data/q2_4/'
+    pi = np.load(fle+'q2_4_tree_mixture.pkl_pi.npy',allow_pickle=True)
+    topology_list = list()
+    theta_list = list()
+    for i in range(3):
+        topology = np.load(fle+'q2_4_tree_mixture.pkl_tree_'+str(i)+'_topology.npy',allow_pickle=True)
+        theta = np.load(fle+'q2_4_tree_mixture.pkl_tree_'+str(i)+'_theta.npy',allow_pickle=True)
+        topology_list.append(topology)
+        theta_list.append(theta)
+    theta_list = np.array(theta_list)
+    topology_list = np.array(topology_list)
+    return theta_list, topology_list, pi
+
+
+def get_loglikelihood(samples, pi, likelihood):
+    '''compute the loglikelihood given the data,the current estimate of the likelihoop
+        and the current parameters
+        returns: sum(loglikelihood), float'''
+    loglikelihood = []
+    for n in range(len(samples)):
+        temp = np.log(np.sum(pi*likelihood[:,n]))
+        loglikelihood.append(temp)
+
+    return sum(loglikelihood)
 
 def create_samples(num_nodes, num_clusters, num_samples):
     seed = np.random.randint(0,200)
@@ -157,107 +206,113 @@ def create_samples(num_nodes, num_clusters, num_samples):
     tm.simulate_pi(seed_val=seed)
     tm.simulate_trees(seed_val=seed)
     tm.sample_mixtures(num_samples=num_samples,seed_val=seed)
-    return tm.samples
+    topology_list = []
+    theta_list = []
+    for i in range(num_clusters):
+        topology_list.append(tm.clusters[i].get_topology_array())
+        theta_list.append(tm.clusters[i].get_theta_array())
 
-def compare():
-    tns = dendropy.TaxonNamespace()
-    filename = "data/q2_4/q2_4_tree_mixture.pkl_tree_0_newick.txt"
-    with open(filename, 'r') as input_file:
-        newick_str = input_file.read()
-    t0 = dendropy.Tree.get(data=newick_str, schema="newick", taxon_namespace=tns)
-    print("\tTree 0: ", t0.as_string("newick"))
-    t0.print_plot()
+    topology_list = np.array(topology_list)
+    theta_list = np.array(theta_list)
+    likelihood = get_likelihood(tm.samples, theta_list, topology_list)
+    loglikelihood = get_loglikelihood(tm.samples, tm.pi, likelihood)
 
-    filename = "data/q2_4/q2_4_tree_mixture.pkl_tree_1_newick.txt"
-    with open(filename, 'r') as input_file:
-        newick_str = input_file.read()
-    t1 = dendropy.Tree.get(data=newick_str, schema="newick", taxon_namespace=tns)
-    print("\tTree 1: ", t1.as_string("newick"))
-    t1.print_plot()
+    return tm.samples, loglikelihood, theta_list, topology_list
 
-    filename = "data/q2_4/q2_4_tree_mixture.pkl_tree_2_newick.txt"
-    with open(filename, 'r') as input_file:
-        newick_str = input_file.read()
-    t2 = dendropy.Tree.get(data=newick_str, schema="newick", taxon_namespace=tns)
-    print("\tTree 2: ", t2.as_string("newick"))
-    t2.print_plot()
+def get_tree_from_topology(topology_list,tns):
+
+    
+    trees = list()
+    for topology in topology_list:
+        rt = Tree()
+        rt.load_tree_from_direct_arrays(np.array(topology))
+        rt = dendropy.Tree.get(data=rt.newick, schema="newick", taxon_namespace=tns)
+        rt.print_plot()
+        trees.append(rt)
+    return trees
+
+def get_tree_from_data(tns):
+    trees = list()
+    for i in range(3):
+        filename = "data/q2_4/q2_4_tree_mixture.pkl_tree_"+str(i)+"_newick.txt"
+        with open(filename, 'r') as input_file:
+            newick_str = input_file.read()
+        t0 = dendropy.Tree.get(data=newick_str, schema="newick", taxon_namespace=tns)
+        print("\tTree 0: ", t0.as_string("newick"))
+        t0.print_plot()
+        trees.append(t0)
+    return trees
+
+
+def compare_trees(tree_1, tree_2):
+    '''param simulate (bool) if 1 we use simulated data otherwise the provided data'''
 
     print("\n3.2 Compare trees and print Robinson-Foulds (RF) distance:\n")
 
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t0, t1))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t0, t2))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t1, t2))
-
-    print("\n4. Load Inferred Trees")
-    filename = "data/q2_4/q2_4_result_em_topology.npy"  # This is the result you have.
-    topology_list = np.load(filename)
-    print(topology_list.shape)
-    print(topology_list)
-
-    rt0 = Tree()
-    rt0.load_tree_from_direct_arrays(topology_list[0])
-    rt0 = dendropy.Tree.get(data=rt0.newick, schema="newick", taxon_namespace=tns)
-    print("\tInferred Tree 0: ", rt0.as_string("newick"))
-    rt0.print_plot()
-
-    rt1 = Tree()
-    rt1.load_tree_from_direct_arrays(topology_list[1])
-    rt1 = dendropy.Tree.get(data=rt1.newick, schema="newick", taxon_namespace=tns)
-    print("\tInferred Tree 1: ", rt1.as_string("newick"))
-    rt1.print_plot()
-
-    rt2 = Tree()
-    rt2.load_tree_from_direct_arrays(topology_list[2])
-    rt2 = dendropy.Tree.get(data=rt2.newick, schema="newick", taxon_namespace=tns)
-    print("\tInferred Tree 2: ", rt2.as_string("newick"))
-    rt2.print_plot()
-
     print("\n4.2 Compare trees and print Robinson-Foulds (RF) distance:\n")
+    for i,org_t in enumerate(tree_1):
+        print("\tt"+str(i)+" vs inferred trees")
+        for inferred_t in tree_2:
+            print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(org_t, inferred_t))
+        print()
 
-    print("\tt0 vs inferred trees")
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t0, rt0))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t0, rt1))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t0, rt2))
-
-    print("\tt1 vs inferred trees")
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t1, rt0))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t1, rt1))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t1, rt2))
-
-    print("\tt2 vs inferred trees")
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t2, rt0))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t2, rt1))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t2, rt2))
 
     print("\nInvestigate")
+    for i,org_t in enumerate(tree_1):
+        print("\tinvestigate t"+str(i)+" vs inferred trees")
+        for inferred_t in tree_2:
 
-    print("\tRF distance: \t", dendropy.calculate.treecompare.symmetric_difference(t0, rt0))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.find_missing_bipartitions(t0, rt0))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.false_positives_and_negatives(t0, rt0))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.find_missing_bipartitions(t0, rt1))
-    print("\tRF distance: \t", dendropy.calculate.treecompare.false_positives_and_negatives(t0, rt1))
+            print("\tRF symmetric difference: \t", dendropy.calculate.treecompare.symmetric_difference(org_t, inferred_t))
+            try:
+                print("\tRF missing bipartitions: \t", dendropy.calculate.treecompare.find_missing_bipartitions(org_t, inferred_t)[0])
+            except:
+                print("\tRF missing bipartitions: Not found \t")
+            print("\tRF false positives and negatives: \t", dendropy.calculate.treecompare.false_positives_and_negatives(org_t, inferred_t))
+            print()
+        print()
 
-def main():
-    print("Hello World!")
-    print("This file demonstrates the flow of function templates of question 2.4.")
 
+def do_2_4_14(num_cluster, num_nodes, N):
+    samples, loglikelihood_data, theta_list_org, topology_list_org = create_samples(num_nodes,num_cluster,N)
+    print_samples(samples, num_cluster)
+    loglikelihood, topology_array, theta_array = run_em(num_cluster, samples)
+    tns = dendropy.TaxonNamespace()
+    tree1 = get_tree_from_topology(topology_list_org, tns)
+    tree2 = get_tree_from_topology(topology_array, tns)
+    compare_trees(tree1, tree2)
+    print_results(loglikelihood_data, loglikelihood[-1])
+
+def do_2_4_13():
     sample_filename = "data/q2_4/q2_4_tree_mixture.pkl_samples.txt"
-    output_filename = "data/q2_4/q2_4_result"
     real_values_filename = "data/q2_4/q2_4_tree_mixture.pkl"
-    num_clusters = 3
+    c = 3
+    samples = np.loadtxt(sample_filename, delimiter="\t", dtype=np.int32)
+    print_samples(samples, c)
+    print("\n2. Run EM Algorithm.\n")
+    loglikelihood, topology_array, theta_array = run_em(c, samples)
+    tns = dendropy.TaxonNamespace()
+    tree1 = get_tree_from_data(tns)
+    tree2 = get_tree_from_topology(topology_array, tns)
+    compare_trees(tree1, tree2)
+    theta_data, topology_data, pi_data = load_true_values()
+    likelihood_data = get_likelihood(samples, theta_data, topology_data)
+    loglikelihood_data = get_loglikelihood(samples, pi_data, likelihood_data)
+    print_results(loglikelihood_data, loglikelihood[-1])
 
-    print("\n1. Load samples from txt file.\n")
+def print_results(log1, log2):
+    print('\n compare loglikelihoods \n')
+    print('loglikelihood original tree',log1)
+    print('loglikelihood inferred tree',log2)
 
-    samples = create_samples(5,6,100)
-    #samples = np.loadtxt(sample_filename, delimiter="\t", dtype=np.int32)
+
+def print_samples(samples,num_cluster):
     num_samples, num_nodes = samples.shape
-    print("\tnum_samples: ", num_samples, "\tnum_nodes: ", num_nodes)
+    print("\tnum_samples: ", num_samples, "\tnum_nodes: ", num_nodes, '\tnum_cluster',num_cluster)
     print("\tSamples: \n", samples)
 
-    print("\n2. Run EM Algorithm.\n")
-
-    #loglikelihood, topology_array, theta_array, init = em_algorithm(seed_val, samples, num_clusters=num_clusters)
-    loglikelihood, topology_array, theta_array, seed, init = sieving(num_clusters, samples)
+def run_em(num_clusters, samples):
+    output_filename = "data/q2_4/q2_4_result"
+    loglikelihood, topology_array, theta_array, seed, init, exp = sieving(num_clusters, samples)
     np.save('.\controll\loglikelihood.npy',loglikelihood)
     print("\n3. Save, print and plot the results.\n")
     for key in init.keys():
@@ -270,6 +325,7 @@ def main():
         print("\tTheta: \t", theta_array[i])
 
     plt.figure(figsize=(8, 3))
+    plt.suptitle('seed = {}, nodes = {}, clusters = {}, N = {}'.format(seed, exp.num_nodes, exp.num_clusters, exp.N))
     plt.subplot(121)
     plt.plot(np.exp(loglikelihood), label='Estimated')
     plt.ylabel("Likelihood of Mixture")
@@ -279,19 +335,19 @@ def main():
     plt.ylabel("Log-Likelihood of Mixture")
     plt.xlabel("Iterations")
     plt.legend(loc=(1.04, 0))
+    
     plt.show()
+    return loglikelihood, topology_array, theta_array
 
-    if real_values_filename != "":
-        print("\n4. Retrieve real results and compare.\n")
-        print("\tComparing the results with real values...")
 
-        print("\t4.1. Make the Robinson-Foulds distance analysis.\n")
-        # TODO: Do RF Comparison
-        compare()
 
-        print("\t4.2. Make the likelihood comparison.\n")
-        # TODO: Do Likelihood Comparison
-
+def main():
+    simulate = 0
+    if simulate:
+        num_cluster, num_nodes, N = (8,5,100)
+        do_2_4_14(num_cluster, num_nodes, N)
+    else:
+        do_2_4_13()
 
 if __name__ == "__main__":
     main()

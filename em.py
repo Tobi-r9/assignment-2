@@ -46,15 +46,10 @@ class EM:
 
 
     def prior(self):
-        '''compute the prior p(x) by number x_i appears / number of samples
-            return: p, np.array, shape = (N,)'''
-        
-
         p = np.zeros(self.N)
-        temp = [list(sample) for sample in self.samples]
-        for ixd,sample in enumerate(temp):
-            c = temp.count(sample)
-            p[ixd] = c/self.N
+        for n in range(self.N):
+            p[n] = sum(self.likelihood[:,n] * self.pi) 
+
         return p
 
     def update_likelihood(self):
@@ -85,10 +80,7 @@ class EM:
         r = np.zeros((self.num_clusters,self.N))
         for k in range(self.num_clusters):
             r[k,:] = (self.likelihood[k,:] * self.pi[k])/self.px
-        #normalize r
-        for n in range(self.N):
-            r[:,n] = r[:,n]/sum(r[:,n])
-        
+
         return r
 
     def update_pi(self):
@@ -97,7 +89,6 @@ class EM:
         pi = np.zeros(self.num_clusters)
         for k in range(self.num_clusters):
             pi[k] = np.sum(self.r[k,:])/self.N
-        pi = pi/sum(pi)
         return pi
     
     def update_q(self):
